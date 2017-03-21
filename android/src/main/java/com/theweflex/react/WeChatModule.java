@@ -5,9 +5,9 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.support.annotation.Nullable;
+import android.util.Log;
 
 import com.facebook.common.executors.UiThreadImmediateExecutorService;
-import com.facebook.common.internal.Files;
 import com.facebook.common.references.CloseableReference;
 import com.facebook.common.util.UriUtil;
 import com.facebook.datasource.DataSource;
@@ -43,8 +43,6 @@ import com.tencent.mm.sdk.openapi.IWXAPI;
 import com.tencent.mm.sdk.openapi.IWXAPIEventHandler;
 import com.tencent.mm.sdk.openapi.WXAPIFactory;
 
-import java.io.File;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.UUID;
 
@@ -59,6 +57,8 @@ public class WeChatModule extends ReactContextBaseJavaModule implements IWXAPIEv
     private final static String INVOKE_FAILED = "WeChat API invoke returns false.";
     private final static String INVALID_ARGUMENT = "invalid argument.";
 
+    static String TAG = "wechat";
+
     public WeChatModule(ReactApplicationContext context) {
         super(context);
     }
@@ -69,11 +69,10 @@ public class WeChatModule extends ReactContextBaseJavaModule implements IWXAPIEv
     }
 
     /**
-     * fix Native module WeChatModule tried to override WeChatModule for module name RCTWeChat.
-     * If this was your intention, return true from WeChatModule#canOverrideExistingModule() bug
-     * @return
+     * fix Native module WeChatModule tried to override WeChatModule for module name RCTWeChat. If
+     * this was your intention, return true from WeChatModule#canOverrideExistingModule() bug
      */
-    public boolean canOverrideExistingModule(){
+    public boolean canOverrideExistingModule() {
         return true;
     }
 
@@ -95,6 +94,7 @@ public class WeChatModule extends ReactContextBaseJavaModule implements IWXAPIEv
     }
 
     public static void handleIntent(Intent intent) {
+        Log.d(TAG, "handleIntent: " + intent.toString());
         for (WeChatModule mod : modules) {
             mod.api.handleIntent(intent, mod);
         }
@@ -174,7 +174,7 @@ public class WeChatModule extends ReactContextBaseJavaModule implements IWXAPIEv
     }
 
     @ReactMethod
-    public void pay(ReadableMap data, Callback callback){
+    public void pay(ReadableMap data, Callback callback) {
         PayReq payReq = new PayReq();
         if (data.hasKey("partnerId")) {
             payReq.partnerId = data.getString("partnerId");
@@ -198,6 +198,16 @@ public class WeChatModule extends ReactContextBaseJavaModule implements IWXAPIEv
             payReq.extData = data.getString("extData");
         }
         payReq.appId = appId;
+
+        Log.d(TAG, "pay.appId: " + payReq.appId);
+        Log.d(TAG, "pay.nonceStr: " + payReq.nonceStr);
+        Log.d(TAG, "pay.package: " + payReq.packageValue);
+        Log.d(TAG, "pay.partnerId: " + payReq.partnerId);
+        Log.d(TAG, "pay.prepayId: " + payReq.prepayId);
+        Log.d(TAG, "pay.timeStamp: " + payReq.timeStamp);
+        Log.d(TAG, "pay.sign: " + payReq.sign);
+
+        Log.w(TAG, "pay: api.sendReq(payReq)" + api.sendReq(payReq));
         callback.invoke(api.sendReq(payReq) ? null : INVOKE_FAILED);
     }
 
@@ -459,37 +469,46 @@ public class WeChatModule extends ReactContextBaseJavaModule implements IWXAPIEv
     @Override
     public void onReq(BaseReq baseReq) {
 
+        Log.d(TAG, "onReq: " + baseReq.transaction);
+        Log.d(TAG, "onReq: " + baseReq.openId);
+        Log.d(TAG, "onReq: " + baseReq.toString());
     }
 
     @Override
     public void onResp(BaseResp baseResp) {
-        WritableMap map = Arguments.createMap();
-        map.putInt("errCode", baseResp.errCode);
-        map.putString("errStr", baseResp.errStr);
-        map.putString("openId", baseResp.openId);
-        map.putString("transaction", baseResp.transaction);
+        try {
+            WritableMap map = Arguments.createMap();
+            map.putInt("errCode", baseResp.errCode);
+            map.putString("errStr", baseResp.errStr);
+            map.putString("openId", baseResp.openId);
+            map.putString("transaction", baseResp.transaction);
 
-        if (baseResp instanceof SendAuth.Resp) {
-            SendAuth.Resp resp = (SendAuth.Resp) (baseResp);
+            if (baseResp instanceof SendAuth.Resp) {
+                SendAuth.Resp resp = (SendAuth.Resp) (baseResp);
 
-            map.putString("type", "SendAuth.Resp");
-            map.putString("code", resp.code);
-            map.putString("state", resp.state);
-            map.putString("url", resp.url);
-            map.putString("lang", resp.lang);
-            map.putString("country", resp.country);
-        } else if (baseResp instanceof SendMessageToWX.Resp) {
-            SendMessageToWX.Resp resp = (SendMessageToWX.Resp) (baseResp);
-            map.putString("type", "SendMessageToWX.Resp");
-        } else if (baseResp instanceof PayResp) {
-            PayResp resp = (PayResp) (baseResp);
-            map.putString("type", "PayReq.Resp");
-            map.putString("returnKey", resp.returnKey);
+                map.putString("type", "SendAuth.Resp");
+                map.putString("code", resp.code);
+                map.putString("state", resp.state);
+                map.putString("url", resp.url);
+                map.putString("lang", resp.lang);
+                map.putString("country", resp.country);
+            } else if (baseResp instanceof SendMessageToWX.Resp) {
+                SendMessageToWX.Resp resp = (SendMessageToWX.Resp) (baseResp);
+                map.putString("type", "SendMessageToWX.Resp");
+            } else if (baseResp instanceof PayResp) {
+                PayResp resp = (PayResp) (baseResp);
+                map.putString("type", "PayReq.Resp");
+                map.putString("returnKey", resp.returnKey);
+            }
+
+            Log.d(TAG, "onResp: " + map.toString());
+
+            this.getReactApplicationContext()
+                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                    .emit("WeChat_Resp", map);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-
-        this.getReactApplicationContext()
-                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                .emit("WeChat_Resp", map);
     }
 
     private interface ImageCallback {
